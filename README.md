@@ -1,1 +1,1 @@
-# ECE 285 CRISPR CAS9 Generator
+# ECE 285 - CRISPR CAS9 Generator
