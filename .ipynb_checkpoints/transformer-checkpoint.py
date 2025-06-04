@@ -11,7 +11,6 @@ from torch.nn import Transformer
 from itertools import product
 
 # Initialize Vocaublary for Tokens
-# Testing pushing !
 kmer_size = 3; 
 dna_nucleotides = ['A', 'T', 'G', 'C']; 
 start_of_sequence = '<sos>'; 
