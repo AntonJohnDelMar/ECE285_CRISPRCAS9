@@ -5,6 +5,7 @@ import random
 import pandas as pd
 import math
 import torch.nn.functional as F
+import matplotlib.pyplot as plt
 from torch.utils.data import Dataset, DataLoader
 from torch.nn import Transformer
 from itertools import product
@@ -68,7 +69,7 @@ def padding_function(batch):
 
 
 class PositionalEncoding(nn.Module): 
-    def __init__(self, model_dim, max_length = 5000):
+    def __init__(self, model_dim, max_length = 5000): 
         super().__init__(); 
         pos_enc = torch.zeros(max_length, model_dim); 
         position = torch.arange(0, max_length).unsqueeze(1); 
@@ -98,18 +99,23 @@ class GRNATransformer(nn.Module):
         self.fully_connected = nn.Linear(model_dim, vocab_size); 
 
     def forward(self, dna, grna): 
-        grna_mask = self.transformer.generate_square_subsequent_mask(grna.size(1)).to(grna.device); 
+        dna_mask = None; 
+        grna_mask = nn.Transformer.generate_square_subsequent_mask(grna.size(1)).to(grna.device); 
 
         dna_emb = self.pos_enc(self.embedding(dna)); 
         grna_emb = self.pos_enc(self.embedding(grna)); 
-        output = self.transformer(dna_emb, grna_emb, grna_mask); 
+        output = self.transformer(src = dna_emb, tgt = grna_emb, src_mask = None, tgt_mask = grna_mask); 
         return self.fully_connected(output); 
 
 
 def train_model(model, dataloader, optimizer, criterion, device, num_epochs = 10): 
     model.train(); 
+    epoch_losses = []; 
 
     for epoch in range(num_epochs): 
+        epoch_loss = 0.0; 
+        batch_count = 0; 
+        
         for dna, grna, in dataloader: 
             dna, grna = dna.to(device), grna.to(device); 
             optimizer.zero_grad(); 
@@ -118,17 +124,32 @@ def train_model(model, dataloader, optimizer, criterion, device, num_epochs = 10
             loss.backward(); 
             optimizer.step(); 
 
+            epoch_loss += loss.item(); 
+            batch_count += 1; 
+
+        avg_loss = epoch_loss / batch_count; 
+        epoch_losses.append(avg_loss); 
+
         print(f"Epoch: {epoch + 1}, Loss: {loss.item():.4f}"); 
 
+    plt.figure(); 
+    plt.plot(range(1, num_epochs + 1), epoch_losses, linestyle='-'); 
+    plt.title("Training Loss per Epoch"); 
+    plt.xlabel("Epoch"); 
+    plt.ylabel("Loss"); 
+    plt.grid(True); 
+    plt.savefig("training_loss_plot.png"); 
+    plt.close(); 
 
-def grna_generator(model, dna, max_length = 25): 
+
+def grna_generator(model, dna, max_length = 100): 
     model.eval(); 
     dna_tokens = tokenizer(dna); 
     dna_ids = torch.tensor([[string2index[token] for token in dna_tokens]]).to(next(model.parameters()).device); 
 
     generated = [string2index['<sos>']]; 
     for _ in range(max_length): 
-        grna_tensor = torch.tensor([generated], dtype = torch.long).to(dna_ids.device()); 
+        grna_tensor = torch.tensor([generated], dtype = torch.long).to(dna_ids.device); 
         with torch.no_grad(): 
             output = model(dna_ids, grna_tensor); 
         next_token = output[0, -1].argmax().item(); 
@@ -158,18 +179,18 @@ if __name__ == '__main__':
     dataset = GRNADNADataset(csv_path); 
     dataloader = DataLoader(
         dataset,
-        batch_size=batch_size,
-        shuffle=True,
-        collate_fn=padding_function
+        batch_size = batch_size,
+        shuffle = True,
+        collate_fn = padding_function
     ); 
 
     # Model
     model = GRNATransformer(
-        vocab_size=vocab_size,
-        model_dim=model_dim,
-        nhead=nhead,
-        num_layers=num_layers,
-        feedforward_dim=feedforward_dim
+        vocab_size = vocab_size,
+        model_dim = model_dim,
+        nhead = nhead,
+        num_layers = num_layers,
+        feedforward_dim = feedforward_dim
     ).to(device); 
 
     # Optimizer and Loss 
@@ -181,9 +202,20 @@ if __name__ == '__main__':
     train_model(model, dataloader, optimizer, criterion, device, num_epochs=num_epochs); 
 
     # Inference Example 
-    test_dna = "ATGGCCATCTACAAGCAGTCACAGCACATGACGGAGGTTGTGAGGCGCTG"; 
-    print("\nGenerated gRNA for test DNA:"); 
-    generated_grna = grna_generator(model, test_dna); 
-    print(" →", generated_grna); 
+    test_dna = "CGGCGCTGGTGCCCAGGACGAGGATGGAGATT"; 
+    print("Test DNA: " + test_dna); 
+    print("\nGenerated gRNA: "); 
+    generated_grna = grna_generator(model, test_dna, max_length = len(test_dna)); 
+    # print(generated_grna); 
+    full_sequence = None; 
+
+    if not generated_grna:
+        full_sequence = ""; 
+
+    full_sequence = generated_grna[0]; 
+    for kmer in generated_grna[1:]:
+        full_sequence += kmer[-1];  
+    
+    print(full_sequence); 
 
 
