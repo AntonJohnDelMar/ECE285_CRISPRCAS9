@@ -6,9 +6,19 @@ import pandas as pd
 import math
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
+import argparse
 from torch.utils.data import Dataset, DataLoader
 from torch.nn import Transformer
 from itertools import product
+
+
+# Arguments
+parser = argparse.ArgumentParser(); 
+parser.add_argument("--train", type = bool, default = False); 
+parser.add_argument("--generate", type = bool, default = False);
+parser.add_argument("--dna", type = str, default = "CGGCGCTGGTGCCCAGGACGAGGATGGAGATT"); 
+args = parser.parse_args();
+
 
 # Initialize Vocaublary for Tokens
 kmer_size = 3; 
@@ -171,7 +181,7 @@ if __name__ == '__main__':
     nhead = 8; 
     num_layers = 4; 
     feedforward_dim = 512; 
-    num_epochs = 10; 
+    num_epochs = 50; 
     learning_rate = 1e-4; 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu"); 
 
@@ -198,24 +208,43 @@ if __name__ == '__main__':
     criterion = nn.CrossEntropyLoss(ignore_index=string2index[pad_token]); 
 
     # Training 
-    print("Starting training...\n"); 
-    train_model(model, dataloader, optimizer, criterion, device, num_epochs=num_epochs); 
+    if(args.train): 
+        print("Starting training...\n"); 
+        train_model(model, dataloader, optimizer, criterion, device, num_epochs=num_epochs); 
+        torch.save(model.state_dict(), 'transformer_model.pt'); 
 
-    # Inference Example 
-    test_dna = "CGGCGCTGGTGCCCAGGACGAGGATGGAGATT"; 
-    print("Test DNA: " + test_dna); 
-    print("\nGenerated gRNA: "); 
-    generated_grna = grna_generator(model, test_dna, max_length = len(test_dna)); 
-    # print(generated_grna); 
-    full_sequence = None; 
+    # Inference  
+    if(args.generate):
 
-    if not generated_grna:
-        full_sequence = ""; 
+        df = pd.read_csv("shortList.csv")
+        dna = []; 
+        grna = []; 
 
-    full_sequence = generated_grna[0]; 
-    for kmer in generated_grna[1:]:
-        full_sequence += kmer[-1];  
-    
-    print(full_sequence); 
+        for grna_seq, dna_seq in zip(df["Guide_sequence"], df["Target_sequence"]):
+            dna.append(dna_seq); 
+            grna.append(grna_seq); 
+
+        
+        model.load_state_dict(torch.load('transformer_model.pt')); 
+        model.to(device); 
+        model.eval(); 
+
+        for i in range(len(dna)): 
+            test_dna = dna[i]; 
+            test_grna = grna[i]; 
+            print("Target DNA:     " + test_dna); 
+            print("Best gRNA:      " + test_grna)
+            generated_grna = grna_generator(model, test_dna, max_length = len(test_dna)); 
+            # print(generated_grna); 
+            full_sequence = None; 
+        
+            if not generated_grna:
+                full_sequence = ""; 
+        
+            full_sequence = generated_grna[0]; 
+            for kmer in generated_grna[1:]:
+                full_sequence += kmer[-1];  
+            
+            print("Generated gRNA: " + full_sequence + "\n"); 
 
 
